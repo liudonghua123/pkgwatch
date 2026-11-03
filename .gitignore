@@ -4,3 +4,4 @@ data/
 .taste-skill/
 *.log
 .DS_Store
+verify*.mjs

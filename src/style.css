@@ -721,7 +721,9 @@ footer .inner {
 
 /* ---------- motion system (design-to-motion) ---------- */
 
-/* entrance: rise from below + blur to sharp, staggered via --d */
+/* entrance: rise from below + blur to sharp, staggered via --d.
+   `.arrived` lands on the animated element itself OR an ancestor,
+   so both compound forms must resolve. */
 [data-m] {
   opacity: 0;
   transform: translateY(24px) scale(0.985);
@@ -737,30 +739,28 @@ footer .inner {
   filter: blur(4px);
 }
 
-.arrived[data-m] {
+.arrived[data-m],
+.arrived [data-m] {
   opacity: 1;
   transform: none;
   filter: none;
 }
 
-/* ticker chips pop in */
+/* ticker chips pop in via keyframes (safe for late-added chips) */
 .ticker .chip {
-  opacity: 0;
-  transform: translateY(8px);
-  transition:
-    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0s),
-    opacity 0.4s cubic-bezier(0.33, 1, 0.68, 1) var(--d, 0s);
+  animation: chip-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--d, 0s);
 }
 
-.ticker .chip:not([style]) {
-  opacity: 1;
-  transform: none;
-}
-
-.arrived .ticker .chip,
-.ticker .chip.arrived {
-  opacity: 1;
-  transform: none;
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* sheen sweep on the live firehose card */
@@ -980,6 +980,19 @@ footer .inner {
   .firehose-head .dot {
     animation: none !important;
   }
+}
+
+/* safety: entrance states never persist — auto-arrive via CSS alone */
+@keyframes motion-arrive {
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+[data-m] {
+  animation: motion-arrive 0.01s linear 2.2s forwards;
 }
 
 /* small screens */
