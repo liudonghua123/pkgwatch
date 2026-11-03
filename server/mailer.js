@@ -1,28 +1,49 @@
-// pkgwatch — mail transport (nodemailer, SMTP optional)
+// pkgwatch — mail transport: Resend (default) / SMTP / console
 'use strict';
 const nodemailer = require('nodemailer');
 
-// Without SMTP env vars the transport logs to console (dev mode).
-const smtp = process.env.SMTP_HOST
-  ? {
-      host: process.env.SMTP_HOST,
+// tiny .env loader (no dependency): KEY=VALUE lines, # comments, CRLF-safe
+require('./env');
+
+const RESEND_KEY = process.env.RESEND_API_KEY || '';
+const FROM = process.env.MAIL_FROM || 'pkgwatch <onboarding@resend.dev>';
+
+const smtpHost = process.env.SMTP_HOST || '';
+
+const transporter = smtpHost
+  ? nodemailer.createTransport({
+      host: smtpHost,
       port: Number(process.env.SMTP_PORT || 587),
       secure: process.env.SMTP_SECURE === 'true' || Number(process.env.SMTP_PORT) === 465,
       auth: process.env.SMTP_USER
         ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
         : undefined,
-    }
-  : null;
+    })
+  : nodemailer.createTransport({ jsonTransport: true });
 
-const transporter = nodemailer.createTransport(smtp || { jsonTransport: true });
+const mode = RESEND_KEY ? 'resend' : smtpHost ? 'smtp' : 'console';
+const isConsoleMode = mode === 'console';
 
-const FROM = process.env.MAIL_FROM || 'pkgwatch <no-reply@pkgwatch.dev>';
-const isConsoleMode = !smtp;
+async function sendResend(to, subject, html, text) {
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${RESEND_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ from: FROM, to: [to], subject, html, text }),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => '');
+    throw new Error(`resend ${r.status}: ${body.slice(0, 200)}`);
+  }
+  return r.json();
+}
 
 function send(to, subject, html, text) {
+  if (mode === 'resend') return sendResend(to, subject, html, text);
   if (isConsoleMode) {
     console.log(`[mail:console] to=${to} subject="${subject}"`);
-    return transporter.sendMail({ from: FROM, to, subject, html, text }).then((info) => info);
   }
   return transporter.sendMail({ from: FROM, to, subject, html, text });
 }
@@ -39,7 +60,7 @@ function verificationEmail(code, ttlMinutes) {
   <div style="max-width:420px;margin:0 auto;background:#212023;border-radius:12px;padding:32px;color:#fff">
     <div style="font-size:13px;letter-spacing:.12em;color:#8a8c92;font-weight:600">PKGWATCH</div>
     <h1 style="font-size:20px;margin:16px 0 8px">邮箱验证 / Verify your email</h1>
-    <p style="font-size:14px;color:#8a8c92;margin:0 0 24px">使用以下验证码完成订阅 / Use this code to finish subscribing:</p>
+    <p style="font-size:14px;color:#8a8c92;margin:0 0 24px">使用以下验证码完成操作 / Use this code to continue:</p>
     <div style="font-size:34px;font-weight:700;letter-spacing:.28em;font-variant-numeric:tabular-nums;background:#171719;border-radius:8px;padding:18px;text-align:center">${code}</div>
     <p style="font-size:12px;color:#8a8c92;margin:24px 0 0">${ttlMinutes} 分钟内有效 / valid for ${ttlMinutes} minutes. 如果不是你本人操作，请忽略 / If you didn't request this, just ignore it.</p>
   </div></body></html>`;
@@ -74,4 +95,4 @@ function updateEmail(pkg, fromVersion, toVersion) {
   return { subject, html, text };
 }
 
-module.exports = { send, verificationEmail, updateEmail, isConsoleMode };
+module.exports = { send, verificationEmail, updateEmail, isConsoleMode, mode };

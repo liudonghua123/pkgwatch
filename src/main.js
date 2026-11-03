@@ -7,6 +7,7 @@ import './style.css';
 const state = {
   lang: localStorage.getItem('pw-lang') || (navigator.language?.startsWith('zh') ? 'zh' : 'en'),
   email: localStorage.getItem('pw-email') || '',
+  token: localStorage.getItem('pw-token') || '',
   verified: false,
   codeSentTo: '',
   codeMode: false, // the console is showing the code step
@@ -30,8 +31,8 @@ const T = () => {
 const $app = document.getElementById('app');
 
 const api = {
-  async get(url) {
-    const r = await fetch(url);
+  async get(url, token) {
+    const r = await fetch(url, token ? { headers: { authorization: `Bearer ${token}` } } : undefined);
     if (!r.ok) throw Object.assign(new Error('http'), { status: r.status, body: await r.json().catch(() => ({})) });
     return r.json();
   },
@@ -436,24 +437,32 @@ async function refreshStatus() {
 async function refreshAccount() {
   if (!state.email) return;
   try {
-    const d = await api.get(`/api/subscriptions/${encodeURIComponent(state.email)}`);
+    const d = await api.get(`/api/subscriptions/${encodeURIComponent(state.email)}`, state.token);
     state.verified = d.verified;
     state.subs = d.subscriptions || [];
     state.notifs = d.notifications || [];
     renderSubs();
     renderNotifs();
-  } catch { /* offline */ }
+  } catch (err) {
+    if (err?.status === 401) {
+      // token missing/expired: the mailbox must be re-verified to view it
+      state.verified = false;
+      state.token = '';
+      localStorage.removeItem('pw-token');
+      renderSubs();
+      renderNotifs();
+    }
+    /* offline or unauthorized */
+  }
 }
 
 async function bootstrap() {
   render();
   if (state.email) {
     try {
-      const d = await api.get('/api/emails');
-      if ((d.emails || []).some((e) => e.email === state.email)) {
-        state.verified = true;
-        await refreshAccount();
-      }
+      const d = await api.get(`/api/verified/${encodeURIComponent(state.email)}`);
+      state.verified = !!d.verified;
+      if (state.verified && state.token) await refreshAccount();
     } catch { /* offline */ }
   }
   refreshFirehose();
@@ -622,6 +631,25 @@ $app.addEventListener('click', async (e) => {
     $app.querySelector('#pkgInput')?.focus();
     return;
   }
+  const unwatchBtn = e.target.closest('[data-unwatch]');
+  if (unwatchBtn) {
+    if (!state.token) return toast(t.errUnverified, true);
+    unwatchBtn.disabled = true;
+    try {
+      await api.post('/api/unsubscribe', { email: state.email, package: unwatchBtn.dataset.unwatch, token: state.token });
+      await refreshAccount();
+    } catch (err) {
+      unwatchBtn.disabled = false;
+      if (err?.status === 401) {
+        state.token = '';
+        localStorage.removeItem('pw-token');
+        toast(t.errUnverified, true);
+      } else {
+        toast(t.errNetwork, true);
+      }
+    }
+    return;
+  }
   if (e.target.closest('#fhMore')) {
     state.firehoseExpanded = !state.firehoseExpanded;
     renderTicker();
@@ -671,8 +699,12 @@ $app.addEventListener('submit', async (e) => {
     state.busy = true;
     syncSubmitLabel();
     try {
-      await api.post('/api/verify/confirm', { email: state.email, code });
+      const d = await api.post('/api/verify/confirm', { email: state.email, code });
       localStorage.setItem('pw-email', state.email);
+      if (d.token) {
+        state.token = d.token;
+        localStorage.setItem('pw-token', d.token);
+      }
       state.verified = true;
       state.codeMode = false;
       const field = form.querySelector('.code-field');
@@ -681,6 +713,17 @@ $app.addEventListener('submit', async (e) => {
       await refreshAccount();
       refreshStatus();
       toast(`${t.verifiedBadge} · ${state.email}`);
+      // the pending tags from the verification submit can now be subscribed
+      if (state.tags.length > 0 && state.verified) {
+        try {
+          await api.post('/api/subscribe', { email: state.email, packages: state.tags });
+          state.tags = [];
+          renderTagbox();
+          await refreshAccount();
+          refreshStatus();
+          refreshFirehose();
+        } catch { /* the user can resubmit */ }
+      }
     } catch (err) {
       const reason = err.body?.reason;
       toast(reason === 'too_many_attempts' ? t.errTooMany : t.errBadCode, true);
@@ -708,6 +751,7 @@ $app.addEventListener('submit', async (e) => {
       refreshStatus();
       refreshFirehose();
       if (d.duplicatesSkipped > 0) toast(t.dupesSkipped.replace('{n}', d.duplicatesSkipped));
+      else toast(t.subscribed.replace('{n}', d.added.length));
     } catch (err) {
       state.busy = false;
       syncSubmitLabel();
@@ -721,6 +765,12 @@ $app.addEventListener('submit', async (e) => {
       );
     }
     return;
+  }
+
+  // verified before, but this browser has no query token for the address:
+  // a code is needed again to bind the mailbox to this session
+  if (email === state.email && state.verified && !state.token) {
+    // fall through to the code flow below (tokens are only issued there)
   }
 
   // not verified: stash the tags, send a code

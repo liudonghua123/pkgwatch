@@ -18,9 +18,17 @@ _changes?since=<seq>               包，经 registry.npmjs.org       对比的
 
 - **发现快** —— 轮询 npm registry 复制变更流，捕获新发布的包。
 - **零误报** —— 每次命中都先向 `registry.npmjs.org/<包名>` 复核最新版本，确认变化后才发邮件。
-- **仅限验证邮箱** —— 先收 6 位验证码完成验证，才能订阅。
+- **仅限验证邮箱** —— 先收 6 位验证码完成验证；**添加订阅和查询订阅都需要**。验证通过会签发一个带签名的查询 token（HMAC，30 天有效），用于读取订阅和取消关注。
 - **服务端去重** —— 相同邮箱重复订阅同一个包会被自动去重；批量提交中若有重复，会返回跳过的数量。
 - **发布实时流** —— 界面直接展示变更流里最近的发布记录，你关注的包会高亮。
+
+## 邮件通道
+
+在 `.env` 中配置（参考 `.env.example`），按顺序生效：
+
+1. **Resend**（默认）—— 设置 `RESEND_API_KEY`；`MAIL_FROM` 需为 Resend 账号内已验证的发件人。
+2. **SMTP** —— 设置 `SMTP_HOST`（及 `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS`），走 nodemailer 发送。
+3. **控制台** —— 都未设置时，验证码与通知打印到 stdout（开发模式）。
 
 ## 快速开始
 
@@ -34,20 +42,17 @@ npm start        # API + 静态页面，监听 http://localhost:8787
 
 打开 http://localhost:8787，输入邮箱 → 收验证码 → 添加包：输入包名，回车或空格添加为标签（自带 npm 搜索建议），批量提交。试试 `@cloudflare/vite-plugin`。
 
-未配置 SMTP 时邮件打印到控制台（"邮件：控制台模式"）。发真实邮件请设置环境变量：
-
-```bash
-SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=you@example.com SMTP_PASS=secret npm start
-```
+把 `.env.example` 复制为 `.env` 即可启用真实邮件（Resend 或 SMTP）。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PORT` | `8787` | HTTP 端口 |
 | `PKGWATCH_DB` | `./data/pkgwatch.db` | SQLite 文件路径 |
 | `PKGWATCH_POLL_MS` | `20000` | 变更流轮询间隔（毫秒） |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | — | SMTP 发信（不填则进入控制台模式） |
+| `RESEND_API_KEY` | — | Resend API 密钥（默认通道） |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | — | SMTP 发信（无 Resend 密钥时使用） |
 | `SMTP_SECURE` | 自动（465 端口为 `true`） | TLS |
-| `MAIL_FROM` | `pkgwatch <no-reply@pkgwatch.dev>` | 发件人 |
+| `MAIL_FROM` | `pkgwatch <onboarding@resend.dev>` | 发件人 |
 
 ## API
 
@@ -56,10 +61,11 @@ SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=you@example.com SMTP_PASS=sec
 | `GET` | `/api/packages/:name` | 查询包的最新版本 |
 | `GET` | `/api/search?q=` | npm 搜索建议（tag 输入用） |
 | `POST` | `/api/verify/request` | `{email}` → 发送 6 位验证码 |
-| `POST` | `/api/verify/confirm` | `{email, code}` → 完成验证 |
+| `POST` | `/api/verify/confirm` | `{email, code}` → 完成验证，返回查询 `token` |
+| `GET` | `/api/verified/:email` | 该邮箱是否已验证 |
 | `POST` | `/api/subscribe` | `{email, packages: [...]}` 批量订阅，自动去重（需已验证邮箱） |
-| `POST` | `/api/unsubscribe` | `{email, package}` 取消关注 |
-| `GET` | `/api/subscriptions/:email` | 订阅列表 + 最近通知 |
+| `POST` | `/api/unsubscribe` | `{email, package, token}` 取消关注（需 token） |
+| `GET` | `/api/subscriptions/:email` | 订阅列表 + 最近通知（**需** `Authorization: Bearer <token>`） |
 | `GET` | `/api/firehose` | 变更流最近发布 |
 | `GET` | `/api/status` | 监听器状态 |
 

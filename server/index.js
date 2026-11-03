@@ -73,6 +73,36 @@ poller.setWatched(store.watchedPackages());
 poller.start();
 setInterval(() => poller.setWatched(store.watchedPackages()), 30_000);
 
+// ---------- query tokens ----------
+// Viewing one email's subscriptions requires a token that only the person who
+// controls that mailbox can obtain (it is issued after a code verification).
+
+const QUERY_TTL_DAYS = 30;
+
+const signQueryToken = (email) =>
+  crypto
+    .createHmac('sha256', store.querySecret())
+    .update(`query:${email}`)
+    .digest('hex')
+    .slice(0, 40);
+
+function issueQueryToken(email) {
+  return `${Date.now().toString(36)}.${signQueryToken(email)}`;
+}
+
+function checkQueryToken(email, token) {
+  if (!token) return false;
+  const dot = token.indexOf('.');
+  if (dot < 1) return false;
+  const issued = parseInt(token.slice(0, dot), 36);
+  if (!Number.isFinite(issued)) return false;
+  if (Date.now() - issued > QUERY_TTL_DAYS * 86_400_000) return false; // expired
+  const expected = signQueryToken(email);
+  const got = token.slice(dot + 1);
+  if (got.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+}
+
 // ---------- api ----------
 
 const api = express.Router();
@@ -102,7 +132,7 @@ api.post('/verify/request', (req, res) => {
     });
 });
 
-// confirm a code -> marks the email verified
+// confirm a code -> marks the email verified, issues a query token
 api.post('/verify/confirm', (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const code = String(req.body?.code || '').trim();
@@ -111,12 +141,15 @@ api.post('/verify/confirm', (req, res) => {
   if (!result.ok) {
     return res.status(400).json({ error: 'verification failed', reason: result.reason });
   }
-  res.json({ ok: true, email });
+  // token lets this browser read that mailbox's subscriptions for 30 days
+  res.json({ ok: true, email, token: issueQueryToken(email), ttlDays: QUERY_TTL_DAYS });
 });
 
-// list verified emails (for UI state)
-api.get('/emails', (_req, res) => {
-  res.json({ emails: store.verifiedEmailsList() });
+// is this email already verified? (the UI uses it to pick the direct path)
+api.get('/verified/:email', (req, res) => {
+  const email = String(req.params.email).trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'invalid email' });
+  res.json({ email, verified: store.isVerifiedEmail(email) });
 });
 
 // subscribe one or many packages (requires verified email).
@@ -155,18 +188,28 @@ api.post('/subscribe', async (req, res) => {
   }
 });
 
-// unsubscribe
+// unsubscribe (requires the query token too)
 api.post('/unsubscribe', (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const pkg = String(req.body?.package || '').trim();
+  const token = String(req.body?.token || '');
+  if (!checkQueryToken(email, token)) {
+    return res.status(401).json({ error: 'verification required', reason: 'bad_token' });
+  }
   store.removeSubscription(email, pkg);
   res.json({ ok: true });
 });
 
-// a viewer for one email's subscriptions + notifications
+// a viewer for one email's subscriptions + notifications.
+// requires the query token issued at verification time.
 api.get('/subscriptions/:email', (req, res) => {
   const email = String(req.params.email).trim().toLowerCase();
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'invalid email' });
+  const auth = String(req.headers.authorization || '');
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : String(req.query.token || '');
+  if (!checkQueryToken(email, token)) {
+    return res.status(401).json({ error: 'verification required', reason: 'bad_token' });
+  }
   res.json({
     email,
     verified: store.isVerifiedEmail(email),
@@ -221,5 +264,7 @@ app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(distDir, 'index.
 app.listen(PORT, () => {
   console.log(`pkgwatch API on http://localhost:${PORT}`);
   console.log(`watching: ${store.watchedPackages().join(', ') || '(none)'}`);
-  console.log(`mail mode: ${mail.isConsoleMode ? 'console (set SMTP_HOST to send real mail)' : 'smtp'}`);
+  console.log(
+    `mail mode: ${mail.mode}${mail.mode === 'resend' ? ` (from ${process.env.MAIL_FROM || 'default'})` : mail.mode === 'console' ? ' (set RESEND_API_KEY or SMTP_HOST to send real mail)' : ''}`
+  );
 });

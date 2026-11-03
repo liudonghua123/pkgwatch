@@ -18,9 +18,17 @@ _changes?since=<seq>               watched packages, confirm      with the
 
 - **Fast discovery** — polls the npm registry replication changes feed for new publishes.
 - **Zero false positives** — every hit is confirmed against `registry.npmjs.org/<pkg>` before an email is sent.
-- **Verified emails only** — a 6-digit code lands in your inbox; subscriptions require a verified address.
+- **Verified emails only** — a 6-digit code lands in your inbox; both subscribing **and** viewing your subscriptions require it. Verification issues a signed query token (HMAC, 30 days) that authorizes reads and unsubscribes for that mailbox.
 - **Server-side dedup** — subscribing to the same package twice with the same email is a no-op; batch submissions with duplicates report how many were skipped.
-- **Live firehose** — the UI shows recent publishes straight from the feed, with your watched packages highlighted.
+- **Live firehose** — the UI shows the latest publishes straight from the feed, with your watched packages highlighted.
+
+## Mail transport
+
+Configured in `.env` (see `.env.example`). First match wins:
+
+1. **Resend** (default) — set `RESEND_API_KEY`; `MAIL_FROM` needs a sender verified in your Resend account.
+2. **SMTP** — set `SMTP_HOST` (plus `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS`); sent via nodemailer.
+3. **Console** — neither set: codes and alerts are printed to stdout (dev mode).
 
 ## Quick start
 
@@ -34,25 +42,17 @@ npm start         # API + static frontend on http://localhost:8787
 
 Open http://localhost:8787, enter your email, verify the 6-digit code, then add packages — type a name, press Enter or space to add it as a tag (with npm search suggestions), and submit the batch. Try `@cloudflare/vite-plugin`.
 
-Without SMTP settings, emails are logged to the console (`mail: console mode`). To send real mail:
-
-```bash
-SMTP_HOST=smtp.example.com \
-SMTP_PORT=587 \
-SMTP_USER=you@example.com \
-SMTP_PASS=secret \
-MAIL_FROM="pkgwatch <no-reply@example.com>" \
-npm start
-```
+Copy `.env.example` to `.env` to enable real mail (Resend or SMTP).
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `8787` | HTTP port |
 | `PKGWATCH_DB` | `./data/pkgwatch.db` | SQLite file |
 | `PKGWATCH_POLL_MS` | `20000` | Changes-feed poll interval |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | — | SMTP transport (omit for console mode) |
+| `RESEND_API_KEY` | — | Resend API key (default transport) |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | — | SMTP transport (used when no Resend key) |
 | `SMTP_SECURE` | auto (`true` on 465) | TLS |
-| `MAIL_FROM` | `pkgwatch <no-reply@pkgwatch.dev>` | From address |
+| `MAIL_FROM` | `pkgwatch <onboarding@resend.dev>` | From address |
 
 ## API
 
@@ -61,10 +61,11 @@ npm start
 | `GET` | `/api/packages/:name` | Look up a package's latest version |
 | `GET` | `/api/search?q=` | npm search suggestions for the tag input |
 | `POST` | `/api/verify/request` | `{email}` → send 6-digit code |
-| `POST` | `/api/verify/confirm` | `{email, code}` → mark verified |
+| `POST` | `/api/verify/confirm` | `{email, code}` → mark verified, returns query `token` |
+| `GET` | `/api/verified/:email` | Is this email verified? |
 | `POST` | `/api/subscribe` | `{email, packages: [...]}` batch, deduplicated (requires verified email) |
-| `POST` | `/api/unsubscribe` | `{email, package}` |
-| `GET` | `/api/subscriptions/:email` | Subscriptions + recent notifications |
+| `POST` | `/api/unsubscribe` | `{email, package, token}` (token required) |
+| `GET` | `/api/subscriptions/:email` | Subscriptions + recent notifications (**requires** `Authorization: Bearer <token>`) |
 | `GET` | `/api/firehose` | Recent publishes from the changes feed |
 | `GET` | `/api/status` | Watcher status |
 

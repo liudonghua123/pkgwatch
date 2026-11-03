@@ -47,6 +47,25 @@ CREATE INDEX IF NOT EXISTS idx_notifications_email_pkg ON notifications(email, p
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
+// ---- query-token secret (stable across restarts) ---------------------------
+// A random secret stored in its own table; used to HMAC session tokens for
+// authenticated reads (e.g. "view my subscriptions").
+
+let _cachedSecret = null;
+
+function querySecret() {
+  if (_cachedSecret) return _cachedSecret;
+  db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'query_secret'").get();
+  if (row) {
+    _cachedSecret = row.value;
+  } else {
+    _cachedSecret = crypto.randomBytes(32).toString('hex');
+    db.prepare("INSERT INTO meta (key, value) VALUES ('query_secret', ?)").run(_cachedSecret);
+  }
+  return _cachedSecret;
+}
+
 // ---- email verification ----------------------------------------------------
 
 function createVerification(email, code, ttlMinutes = 15) {
@@ -124,7 +143,7 @@ function recentNotifications(email, limit = 20) {
 }
 
 module.exports = {
-  db, sha256,
+  db, sha256, querySecret,
   createVerification, checkVerification, isVerifiedEmail, verifiedEmailsList,
   addSubscription, removeSubscription, subscriptionsByEmail, allSubscriptions,
   watchedPackages, updateVersion, markNotified, recentNotifications,
