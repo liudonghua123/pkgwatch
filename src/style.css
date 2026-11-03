@@ -463,6 +463,42 @@ h1 {
   line-height: 1;
 }
 
+/* add / manage tabs — two capsule pills, the motif at work */
+.mode-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 5px;
+  align-self: flex-start;
+}
+
+.mode-tab {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--step-small);
+  font-weight: 500;
+  padding: 9px 22px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.25s, color 0.25s;
+}
+
+.mode-tab:hover { color: var(--ink); }
+.mode-tab.on { background: var(--accent); color: var(--accent-ink); }
+
+.manage-hint {
+  margin: 0;
+  font-size: var(--step-small);
+  color: var(--muted);
+  line-height: 1.5;
+  padding: 14px 18px;
+  background: var(--bg);
+  border-radius: 18px;
+}
+
 .c-field { display: flex; flex-direction: column; gap: 8px; }
 
 .c-field label { font-size: var(--step-small); color: var(--muted); }

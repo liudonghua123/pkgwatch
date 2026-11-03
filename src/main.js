@@ -9,6 +9,7 @@ const state = {
   email: localStorage.getItem('pw-email') || '',
   token: localStorage.getItem('pw-token') || '',
   verified: false,
+  mode: 'add', // 'add' watches packages; 'manage' views/unwatches them
   codeSentTo: '',
   codeMode: false, // the console is showing the code step
   tags: [],
@@ -142,9 +143,13 @@ function render() {
       <section class="console-zone" id="console">
         <form class="console" id="subscribeForm" data-ui novalidate>
           <h2 class="console-title">${t.consoleTitle}</h2>
+          <div class="mode-tabs" role="tablist" data-ui>
+            <button type="button" class="mode-tab ${state.mode === 'add' ? 'on' : ''}" data-mode="add" role="tab" aria-selected="${state.mode === 'add'}">${t.tabAdd}</button>
+            <button type="button" class="mode-tab ${state.mode === 'manage' ? 'on' : ''}" data-mode="manage" role="tab" aria-selected="${state.mode === 'manage'}">${t.tabManage}</button>
+          </div>
           <div class="c-field" data-m="up">
-            <label for="email">${t.emailLabel}</label>
-            <input type="email" id="email" name="email" placeholder="${t.emailPlaceholder}" autocomplete="email" value="${esc(state.email)}" />
+            <label for="email">${state.mode === 'manage' ? t.emailLabelManage : t.emailLabel}</label>
+            <input type="email" id="email" name="email" placeholder="${t.emailPlaceholder}" autocomplete="email" value="${esc(state.mode === 'manage' ? '' : state.email)}" />
           </div>
           <div class="c-field code-field" data-m="up" ${state.codeMode ? '' : 'hidden'}>
             <label for="code">${t.codeLabel}</label>
@@ -154,6 +159,7 @@ function render() {
             </div>
             <p class="hint" id="codeHint">${t.codeSentTo.replace('{email}', esc(state.codeSentTo))}</p>
           </div>
+          ${state.mode === 'add' ? `
           <div class="c-field" data-m="up">
             <label for="pkgInput">${t.pkgLabel}</label>
             <div class="tagbox" id="tagbox">
@@ -167,6 +173,10 @@ function render() {
           </div>
           <div class="search-pop" id="searchPop" hidden></div>
           <button class="btn primary c-submit" id="addBtn" type="submit">${t.watchBtnEmpty}</button>
+          ` : `
+          <p class="manage-hint">${t.manageHint}</p>
+          <button class="btn primary c-submit" id="manageBtn" type="submit">${t.manageBtn}</button>
+          `}
         </form>
 
         <div class="panel">
@@ -259,6 +269,11 @@ function render() {
 // ---------- console form helpers ----------
 
 function submitLabel(t) {
+  if (state.mode === 'manage') {
+    if (state.busy) return t.manageBusy;
+    if (state.codeMode) return t.verify;
+    return t.manageBtn;
+  }
   if (state.busy) return state.codeMode ? t.verifying : t.adding;
   if (state.codeMode) return t.verify;
   const n = state.tags.length;
@@ -268,8 +283,10 @@ function submitLabel(t) {
 }
 
 function syncSubmitLabel() {
-  const btn = $app.querySelector('#addBtn');
-  if (btn) btn.textContent = submitLabel(T());
+  const label = submitLabel(T());
+  for (const btn of $app.querySelectorAll('#addBtn, #manageBtn')) {
+    btn.textContent = label;
+  }
 }
 
 function renderSearchPop() {
@@ -631,6 +648,18 @@ $app.addEventListener('click', async (e) => {
     $app.querySelector('#pkgInput')?.focus();
     return;
   }
+  const modeTab = e.target.closest('[data-mode]');
+  if (modeTab) {
+    const next = modeTab.dataset.mode;
+    if (next !== state.mode) {
+      state.mode = next;
+      state.codeMode = false;
+      state.codeSentTo = '';
+      render();
+      $app.querySelector('#email')?.focus();
+    }
+    return;
+  }
   const unwatchBtn = e.target.closest('[data-unwatch]');
   if (unwatchBtn) {
     if (!state.token) return toast(t.errUnverified, true);
@@ -710,9 +739,16 @@ $app.addEventListener('submit', async (e) => {
       const field = form.querySelector('.code-field');
       if (field) field.hidden = true;
       syncSubmitLabel();
-      await refreshAccount();
       refreshStatus();
       toast(`${t.verifiedBadge} · ${state.email}`);
+      if (state.mode === 'manage') {
+        // the point of manage mode: show this mailbox's subscriptions
+        await refreshAccount();
+        state.busy = false;
+        syncSubmitLabel();
+        return;
+      }
+      await refreshAccount();
       // the pending tags from the verification submit can now be subscribed
       if (state.tags.length > 0 && state.verified) {
         try {
@@ -733,7 +769,43 @@ $app.addEventListener('submit', async (e) => {
     return;
   }
 
-  // phase 1: validate, then either send a code or subscribe directly
+  // manage mode phase 1: verify the mailbox, then show its subscriptions
+  if (state.mode === 'manage') {
+    const email = emailInput?.value.trim().toLowerCase();
+    if (!email || !EMAIL_RE.test(email)) return toast(t.errInvalidEmail, true);
+    // already holding a token for this mailbox? read straight away
+    if (state.token && email === state.email) {
+      state.email = email;
+      state.verified = true;
+      await refreshAccount();
+      return;
+    }
+    state.busy = true;
+    syncSubmitLabel();
+    try {
+      await api.post('/api/verify/request', { email });
+      state.email = email;
+      state.codeSentTo = email;
+      state.codeMode = true;
+      state.busy = false;
+      const field = form.querySelector('.code-field');
+      if (field) {
+        field.hidden = false;
+        const hint = field.querySelector('#codeHint');
+        if (hint) hint.textContent = t.codeSentTo.replace('{email}', email);
+      }
+      syncSubmitLabel();
+      animateRows('#subscribeForm', '.code-field');
+      form.querySelector('#code')?.focus();
+    } catch {
+      state.busy = false;
+      syncSubmitLabel();
+      toast(t.errSendFailed, true);
+    }
+    return;
+  }
+
+  // phase 1 (add mode): validate, then either send a code or subscribe directly
   const email = emailInput?.value.trim().toLowerCase();
   if (!email || !EMAIL_RE.test(email)) return toast(t.errInvalidEmail, true);
   if (state.tags.length === 0) return toast(t.errInvalidPkg, true);

@@ -73,6 +73,7 @@ Copy `.env.example` to `.env` to enable real mail (Resend or SMTP).
 
 - **One-motif design**: the capsule shape of a tag chip is the motif everywhere — a giant capsule rising from the hero, capsule buttons and inputs, a full-bleed capsule band for the live feed, capsule bullets in the copy.
 - **Single-form console**: enter your email, stack packages as tags (Enter / space adds a chip, Backspace removes the last one, npm search suggestions while typing), press one button. First submission verifies the email with a 6-digit code; verified addresses subscribe straight away.
+- **Manage tab**: the form has two capsule tabs — **Add** watches packages, **Manage** lists what a mailbox already watches. Manage asks for the same email + 6-digit code proof (or reuses the still-valid token from a previous verification), then shows every subscription with a per-item unsubscribe button.
 - **Close-ups board**: six enlarged UI fragments explain the product part by part ("Every part, up close.").
 - **Mobile-first** responsive layout; the hero capsule drops below the copy on narrow screens.
 - **Dark / light theme** toggle, follows system preference, persisted.

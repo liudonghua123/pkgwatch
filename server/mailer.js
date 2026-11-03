@@ -81,9 +81,9 @@ function updateEmail(pkg, fromVersion, toVersion) {
   const html = `<!doctype html><html><body style="margin:0;padding:32px;background:#171719;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <div style="max-width:420px;margin:0 auto;background:#212023;border-radius:12px;padding:32px;color:#fff">
     <div style="font-size:13px;letter-spacing:.12em;color:#8a8c92;font-weight:600">PKGWATCH</div>
-    <h1 style="font-size:20px;margin:16px 0 8px;font-family:ui-monospace,Menlo,Consolas,monospace">${pkg}</h1>
+    <h1 style="font-size:20px;margin:16px 0 8px;font-family:ui-monospace,Menlo,Consolas,monospace">${pkg}</h1><!--taste-skill-ignore: package name is literal code-->
     <p style="font-size:14px;color:#8a8c92;margin:0 0 20px">新版本发布 / new version published:</p>
-    <div style="display:flex;align-items:center;gap:12px;background:#171719;border-radius:8px;padding:18px;font-family:ui-monospace,Menlo,Consolas,monospace">
+    <div style="display:flex;align-items:center;gap:12px;background:#171719;border-radius:8px;padding:18px;font-family:ui-monospace,Menlo,Consolas,monospace"><!--taste-skill-ignore: version numbers are literal code-->
       <span style="font-size:15px;color:#8a8c92;text-decoration:line-through">${fromVersion || '—'}</span>
       <span style="color:#44a282;font-size:15px">→</span>
       <span style="font-size:17px;font-weight:700;color:#5fc39c">${toVersion}</span>
