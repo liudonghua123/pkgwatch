@@ -70,8 +70,10 @@ npm start
 
 ## UI
 
-- **Mobile-first** responsive layout in a data-terminal style: dark ground, one accent, monospace package names.
-- **Tag input** for packages: Enter / space adds a chip, Backspace removes the last one, npm search suggestions while typing.
+- **One-motif design**: the capsule shape of a tag chip is the motif everywhere — a giant capsule rising from the hero, capsule buttons and inputs, a full-bleed capsule band for the live feed, capsule bullets in the copy.
+- **Single-form console**: enter your email, stack packages as tags (Enter / space adds a chip, Backspace removes the last one, npm search suggestions while typing), press one button. First submission verifies the email with a 6-digit code; verified addresses subscribe straight away.
+- **Close-ups board**: six enlarged UI fragments explain the product part by part ("Every part, up close.").
+- **Mobile-first** responsive layout; the hero capsule drops below the copy on narrow screens.
 - **Dark / light theme** toggle, follows system preference, persisted.
 - **English / 中文** toggle, persisted.
 - **Motion**: staggered rise-and-resolve entrances, chip pop-ins, a sheen sweep on the live feed, pulse on the live dot; `prefers-reduced-motion` renders everything static.
