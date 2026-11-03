@@ -293,7 +293,9 @@ function renderSearchPop() {
   const pop = $app.querySelector('#searchPop');
   if (!pop) return;
   if (!state.searchOpen || state.searchResults.length === 0) {
+    state.searchOpen = false;
     pop.hidden = true;
+    pop.innerHTML = '';
     return;
   }
   pop.hidden = false;
@@ -626,6 +628,19 @@ $app.addEventListener('keydown', (e) => {
   }
 });
 
+// blur-style close: when focus leaves the tagbox (click elsewhere, Tab away),
+// hide the suggestions unless focus moved into the popup itself
+$app.addEventListener('focusout', (e) => {
+  if (!state.searchOpen) return;
+  if (e.target.id !== 'pkgInput' && !e.target.closest('#searchPop')) return;
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (active && (active.id === 'pkgInput' || active.closest?.('#searchPop'))) return;
+    state.searchOpen = false;
+    renderSearchPop();
+  }, 0);
+});
+
 $app.addEventListener('click', async (e) => {
   const t = T();
   const pick = e.target.closest('[data-pick]');
@@ -637,6 +652,7 @@ $app.addEventListener('click', async (e) => {
     $app.querySelector('#pkgInput')?.focus();
     return;
   }
+  // clicking anywhere outside the tagbox closes the suggestions
   if (!e.target.closest('#tagbox') && !e.target.closest('#searchPop') && state.searchOpen) {
     state.searchOpen = false;
     renderSearchPop();

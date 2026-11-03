@@ -606,6 +606,9 @@ input:focus {
   z-index: 5;
 }
 
+/* display:flex above beats the UA hidden rule; close it for real */
+.search-pop[hidden] { display: none; }
+
 .search-item {
   display: grid;
   grid-template-columns: 1fr auto;
