@@ -48,6 +48,76 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---------------- living background ----------------
+   two enormous capsules drifting behind everything, plus a
+   soft glow that follows the page scroll. the motif at rest. */
+
+.bg-motifs {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-motif {
+  position: absolute;
+  border-radius: var(--radius);
+  background: var(--accent);
+  opacity: 0.055;
+  filter: blur(2px);
+  transform: rotate(-14deg) translateZ(0);
+}
+
+.bg-motif.a {
+  width: 58vw;
+  height: 15vw;
+  top: -4vw;
+  right: -12vw;
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+
+.bg-motif.b {
+  width: 44vw;
+  height: 11vw;
+  bottom: 18vh;
+  left: -14vw;
+  animation: drift-b 34s ease-in-out infinite alternate;
+}
+
+.bg-motif.c {
+  width: 30vw;
+  height: 8vw;
+  top: 48vh;
+  right: -8vw;
+  animation: drift-a 42s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes drift-a {
+  from { transform: rotate(-14deg) translate(0, 0) translateZ(0); }
+  to { transform: rotate(-9deg) translate(-5vw, 7vh) translateZ(0); }
+}
+
+@keyframes drift-b {
+  from { transform: rotate(10deg) translate(0, 0) translateZ(0); }
+  to { transform: rotate(4deg) translate(6vw, -6vh) translateZ(0); }
+}
+
+/* a soft glow whose position tracks scroll progress */
+.bg-glow {
+  position: absolute;
+  width: 34vw;
+  height: 34vw;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.05;
+  filter: blur(120px);
+  left: 50%;
+  top: 30vh;
+  transform: translate(-50%, -50%) translateZ(0);
+  transition: top 0.9s cubic-bezier(0.33, 1, 0.68, 1);
+}
+
 ::selection { background: var(--accent); color: var(--accent-ink); }
 
 code {
@@ -166,7 +236,7 @@ a { color: inherit; }
 
 .hero {
   position: relative;
-  min-height: min(88svh, 860px);
+  min-height: min(72svh, 680px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -213,6 +283,11 @@ a { color: inherit; }
 
 html[data-theme='light'] .motif-chip { mix-blend-mode: normal; }
 
+/* hero parallax: the capsule drifts up as you scroll away */
+@media (prefers-reduced-motion: no-preference) {
+  .hero-motif .motif-chip { will-change: transform; }
+}
+
 .hero-copy {
   position: relative;
   z-index: 2;
@@ -238,7 +313,7 @@ h1 {
 .hero-cta { position: relative; z-index: 2; align-self: flex-start; }
 
 @media (max-width: 900px) {
-  .hero { min-height: 78svh; justify-content: flex-start; padding-top: 12svh; }
+  .hero { min-height: 64svh; justify-content: flex-start; padding-top: 8svh; }
   .hero-copy { max-width: 100%; }
   .hero-motif {
     align-items: flex-end;
@@ -246,16 +321,16 @@ h1 {
     top: auto;
   }
   .motif-chip {
-    height: 38vw;
+    height: 34vw;
     margin-bottom: -12vw;
     transform: rotate(-6deg);
-    gap: 4vw;
-    padding: 0 6vw;
+    gap: 3.5vw;
+    padding: 0 5vw;
     z-index: 0;
   }
   .hero-copy { z-index: 2; }
-  .mc-dot { width: 12vw; height: 12vw; }
-  .mc-text { font-size: 6.5vw; }
+  .mc-dot { width: 10vw; height: 10vw; }
+  .mc-text { font-size: 5.4vw; }
   h1 { font-size: clamp(2.6rem, 8.5vw, 4.5rem); }
   .hero .sub { font-size: 1.0625rem; }
 }
@@ -266,8 +341,8 @@ h1 {
   background: var(--accent);
   color: var(--accent-ink);
   border-radius: var(--radius-card);
-  padding: clamp(24px, 4vw, 44px);
-  margin: clamp(48px, 8vh, 96px) 0;
+  padding: clamp(20px, 3vw, 36px);
+  margin: clamp(28px, 5vh, 56px) 0;
 }
 
 .fh-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 20px; }
@@ -342,6 +417,25 @@ h1 {
   font-weight: 500;
 }
 
+/* expand / collapse the firehose */
+.fh-more {
+  margin-top: 16px;
+  border: 0;
+  background: var(--accent-ink);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--step-small);
+  font-weight: 500;
+  padding: 10px 22px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
+}
+
+.fh-more:hover { transform: translateY(-1px); }
+.fh-more:active { transform: scale(0.97); }
+.fh-more[hidden] { display: none; }
+
 /* ---------------- console (the live thing) ---------------- */
 
 .console-zone {
@@ -349,7 +443,7 @@ h1 {
   grid-template-columns: minmax(0, 5fr) minmax(0, 4fr);
   gap: clamp(20px, 3vw, 40px);
   align-items: start;
-  margin: clamp(48px, 8vh, 96px) 0;
+  margin: clamp(28px, 5vh, 56px) 0;
 }
 
 .console {
@@ -401,16 +495,23 @@ input:focus {
 
 .hint { margin: 0; font-size: var(--step-small); color: var(--muted); }
 
-/* tagbox — the motif at work size */
+/* tagbox — the motif at work size; visually one input that contains the tags */
 .tagbox {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   background: var(--bg);
   border-radius: 18px;
-  padding: 10px;
+  padding: 8px 10px;
+  min-height: 58px;
   cursor: text;
+  transition: outline-color 0.2s;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
+
+.tagbox:focus-within { outline-color: var(--accent); }
 
 .tag {
   display: inline-flex;
@@ -436,6 +537,9 @@ input:focus {
   padding: 8px 6px;
   outline-offset: -2px;
 }
+
+/* the inner input never draws its own focus ring; the tagbox does it */
+.tagbox input:focus { outline: none; }
 
 .tag-x {
   border: 0;
@@ -551,7 +655,7 @@ input:focus {
 
 /* ---------------- close-ups board ---------------- */
 
-.board-zone { margin: clamp(48px, 8vh, 96px) 0; }
+.board-zone { margin: clamp(28px, 5vh, 56px) 0; }
 
 .board {
   display: grid;
@@ -605,9 +709,15 @@ input:focus {
   color: var(--accent);
 }
 
-/* tiles crop their zoom element off-centre */
-.t-tag .zoom { justify-content: flex-start; left: -10%; }
-.t-batch .zoom { justify-content: flex-end; right: -12%; }
+/* tiles crop their zoom element off-centre — horizontally only, never into captions */
+.t-tag .zoom { justify-content: flex-start; padding-left: 4%; }
+.t-batch .zoom { justify-content: flex-end; padding-right: 4%; }
+
+/* wide tiles with many demo chips: shrink the chips so they never reach the caption */
+.t-batch .zoom { flex-wrap: wrap; align-content: center; row-gap: 8px; }
+.t-batch .tag.demo { padding: 8px 14px 8px 18px; }
+.t-batch .tag.demo code { font-size: 1.05rem; }
+.t-batch .tag.demo .tag-x { width: 22px; height: 22px; font-size: 13px; }
 
 .t-head {
   grid-column: span 12;
@@ -679,7 +789,7 @@ input:focus {
 /* ---------------- how ---------------- */
 
 .how {
-  margin: clamp(48px, 8vh, 96px) 0;
+  margin: clamp(28px, 5vh, 56px) 0;
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: clamp(20px, 3vw, 48px);
@@ -734,7 +844,7 @@ input:focus {
   gap: 8px 28px;
   color: var(--muted);
   font-size: var(--step-small);
-  padding: 28px 0;
+  padding: 18px 0;
 }
 
 .status-strip .k { color: var(--ink); font-weight: 500; }
@@ -742,11 +852,11 @@ input:focus {
 /* ---------------- footer ---------------- */
 
 footer {
-  margin-top: clamp(48px, 8vh, 96px);
+  margin-top: clamp(28px, 5vh, 56px);
   border-radius: var(--radius-card) var(--radius-card) 0 0;
   background: var(--accent);
   color: var(--accent-ink);
-  padding: clamp(32px, 5vw, 60px) var(--margin) 40px;
+  padding: clamp(28px, 4vw, 48px) var(--margin) 36px;
 }
 
 footer .inner { max-width: 1280px; margin: 0 auto; }
@@ -819,8 +929,8 @@ footer {
     opacity 0.7s cubic-bezier(0.33, 1, 0.68, 1) var(--d, 0s);
 }
 
-.arrived [data-m],
-.arrived[data-m] {
+.arrived[data-m],
+.arrived [data-m] {
   opacity: 1;
   transform: none;
   filter: none;
@@ -859,6 +969,12 @@ footer {
   .c-submit { align-self: stretch; }
   .hero-cta { align-self: stretch; justify-content: center; }
   .foot-row { flex-direction: column; gap: 6px; }
+  .bg-motif.a { width: 80vw; height: 22vw; top: -6vw; }
+  .bg-motif.b { width: 64vw; height: 16vw; }
+  .bg-motif.c { display: none; }
+  .bg-glow { width: 120vw; height: 120vw; opacity: 0.09; }
+  .fh-more { align-self: stretch; }
+  .console, .panel { padding: 20px; }
 }
 
 @media (max-width: 480px) {
@@ -866,10 +982,17 @@ footer {
   .board { grid-template-columns: 1fr; grid-auto-rows: 34vw; }
   .t-head, .t-tag, .t-batch { grid-column: span 1; }
   .t-verify, .t-alert, .t-live, .t-mail { grid-column: span 1; }
+  .t-batch { grid-row: span 2; }
   .console, .panel, .firehose { border-radius: 22px; }
-  .tile .zoom { inset: 0 0 46% 0; }
-  .t-batch .zoom { right: -6%; }
+  .tile .zoom { inset: 0 0 48% 0; }
+  .t-batch .zoom { inset: 0 0 42% 0; justify-content: flex-start; padding-right: 0; }
   .tile .tag.demo { padding: 8px 10px 8px 16px; }
   .tile .tag.demo code { font-size: 1rem; }
   .tile .tag.demo .tag-x { width: 20px; height: 20px; font-size: 12px; }
+  .t-batch .tag.demo { padding: 6px 8px 6px 13px; }
+  .t-batch .tag.demo code { font-size: 0.875rem; }
+  .tagbox { min-height: 54px; padding: 7px 8px; }
+  .tag { padding: 7px 7px 7px 12px; }
+  .btn { min-height: 52px; padding: 14px 24px; }
+  .fh-more { padding: 12px 22px; }
 }

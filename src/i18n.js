@@ -12,6 +12,8 @@ export const messages = {
     // firehose
     liveNow: 'Live from the npm firehose',
     liveSub: 'Packages published in the last minute, straight from the registry replication feed',
+    showAll: 'Show all {n}',
+    showLess: 'Show latest 10 only',
     // console (subscribe form)
     consoleTitle: 'Add a watch',
     emailLabel: 'Your email',
@@ -98,6 +100,8 @@ export const messages = {
     // firehose
     liveNow: 'npm 发布实时流',
     liveSub: '来自 registry 复制流的最近发布记录',
+    showAll: '展开全部 {n} 条',
+    showLess: '只看最新 10 条',
     // console
     consoleTitle: '添加关注',
     emailLabel: '你的邮箱',

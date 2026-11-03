@@ -16,6 +16,7 @@ const state = {
   subs: [],
   notifs: [],
   firehose: [],
+  firehoseExpanded: false, // show all publishes or just the top 10
   watched: [],
   mailMode: 'console',
   seq: null,
@@ -92,6 +93,12 @@ function render() {
   const dark = document.documentElement.dataset.theme !== 'light';
   document.title = state.lang === 'zh' ? 'pkgwatch — npm 更新邮件通知' : 'pkgwatch — npm update email notifier';
   $app.innerHTML = `
+  <div class="bg-motifs" aria-hidden="true">
+    <span class="bg-motif a"></span>
+    <span class="bg-motif b"></span>
+    <span class="bg-motif c"></span>
+    <span class="bg-glow" id="bgGlow"></span>
+  </div>
   <div class="shell">
 
     <header class="topbar">
@@ -127,6 +134,7 @@ function render() {
           <p>${t.liveSub}</p>
         </div>
         <div class="ticker" id="ticker" data-ui></div>
+        <button type="button" class="fh-more" id="fhMore" hidden></button>
       </section>
 
       <!-- ============ CONSOLE: the live thing ============ -->
@@ -244,6 +252,7 @@ function render() {
   renderStatus();
   syncSubmitLabel();
   initMotion();
+  initParallax();
 }
 
 // ---------- console form helpers ----------
@@ -307,10 +316,24 @@ function renderTagbox() {
 
 // ---------- ticker / lists ----------
 
+const FIREHOSE_TOP = 10; // collapsed view: latest 10 publishes
+
 function renderTicker() {
   const el = $app.querySelector('#ticker');
   if (!el) return;
-  const names = state.firehose.slice(-40).reverse();
+  const latest = state.firehose.slice(-40).reverse();
+  const names = state.firehoseExpanded ? latest : latest.slice(0, FIREHOSE_TOP);
+  const moreBtn = $app.querySelector('#fhMore');
+  if (moreBtn) {
+    if (latest.length > FIREHOSE_TOP) {
+      moreBtn.hidden = false;
+      const t = T();
+      moreBtn.textContent = state.firehoseExpanded ? t.showLess : t.showAll.replace('{n}', latest.length);
+      moreBtn.setAttribute('aria-expanded', String(state.firehoseExpanded));
+    } else {
+      moreBtn.hidden = true;
+    }
+  }
   if (names.length === 0) {
     el.innerHTML = `<span class="chip" style="opacity:.5">…</span>`;
     return;
@@ -444,19 +467,34 @@ async function bootstrap() {
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
+let scrollObserver = null;
+
 function initMotion() {
-  if (reducedMotion.matches) {
-    $app.querySelectorAll('[data-m]').forEach((el) => el.classList.add('arrived'));
-    return;
-  }
   $app.querySelectorAll('[data-m]').forEach((el, i) => {
-    if (!el.style.getPropertyValue('--d')) el.style.setProperty('--d', `${(i * 0.07).toFixed(2)}s`);
+    if (!el.style.getPropertyValue('--d')) el.style.setProperty('--d', `${(i % 6 * 0.07).toFixed(2)}s`);
   });
-  requestAnimationFrame(() => requestAnimationFrame(() => $app.classList.add('arrived')));
   // ticker chips pop in, staggered
   $app.querySelectorAll('.ticker .chip').forEach((chip, i) => {
     chip.style.setProperty('--d', `${Math.min(i * 0.04, 0.7).toFixed(2)}s`);
   });
+  if (reducedMotion.matches || !('IntersectionObserver' in window)) {
+    $app.querySelectorAll('[data-m]').forEach((el) => el.classList.add('arrived'));
+    return;
+  }
+  // scroll-driven entrances: each element arrives when it enters the viewport
+  scrollObserver?.disconnect();
+  scrollObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('arrived');
+          scrollObserver.unobserve(entry.target);
+        }
+      }
+    },
+    { rootMargin: '0px 0px -8% 0px', threshold: 0.08 }
+  );
+  $app.querySelectorAll('[data-m]').forEach((el) => scrollObserver.observe(el));
 }
 
 // a fresh publish lands on the ticker: the leading chips re-enter
@@ -480,6 +518,31 @@ function animateRows(containerSel, rowSel) {
     row.classList.add('enter');
     row.style.setProperty('--d', `${Math.min(i * 0.06, 0.5).toFixed(2)}s`);
   });
+}
+
+// hero parallax: the giant capsule drifts as the page scrolls
+function initParallax() {
+  const chip = $app.querySelector('.hero-motif .motif-chip');
+  if (reducedMotion.matches) return;
+  const glow = $app.querySelector('#bgGlow');
+  let ticking = false;
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = Math.min(window.scrollY, 900);
+        if (chip) chip.style.transform = `rotate(-8deg) translateY(${(-y * 0.08).toFixed(1)}px) translateZ(0)`;
+        // the background glow follows the reading position
+        const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+        const p = Math.min(window.scrollY / max, 1);
+        if (glow) glow.style.top = `${20 + p * 130}vh`;
+        ticking = false;
+      });
+    },
+    { passive: true }
+  );
 }
 
 // ---------- events ----------
@@ -557,6 +620,14 @@ $app.addEventListener('click', async (e) => {
     state.tags.splice(Number(tagX.dataset.tagX), 1);
     renderTagbox();
     $app.querySelector('#pkgInput')?.focus();
+    return;
+  }
+  if (e.target.closest('#fhMore')) {
+    state.firehoseExpanded = !state.firehoseExpanded;
+    renderTicker();
+    $app.querySelectorAll('.ticker .chip').forEach((chip, i) => {
+      chip.style.setProperty('--d', `${Math.min(i * 0.04, 0.7).toFixed(2)}s`);
+    });
     return;
   }
   if (e.target.closest('#themeBtn')) {
