@@ -9,7 +9,9 @@ const state = {
   step: 'email', // email | code | package
   email: localStorage.getItem('pw-email') || '',
   codeSentTo: '',
-  pkgPreview: null, // {name, version, publishedAt} | {name, error}
+  tags: [], // package names staged in the tag input
+  searchResults: [],
+  searchOpen: false,
   subs: [],
   notifs: [],
   firehose: [],
@@ -17,11 +19,11 @@ const state = {
   mailMode: 'console',
   seq: null,
   busy: false,
+  verifiedEmail: false,
 };
 
 const t = () => {
   const fn = makeT(state.lang);
-  // supports both t('key') and t.key
   return new Proxy(fn, { get: (target, prop) => target(prop) });
 };
 const $app = document.getElementById('app');
@@ -51,7 +53,10 @@ function toast(msg, isError = false) {
   el.className = 'toast' + (isError ? ' error' : '');
   el.textContent = msg;
   box.appendChild(el);
-  setTimeout(() => el.remove(), 3800);
+  setTimeout(() => {
+    el.classList.add('bye');
+    setTimeout(() => el.remove(), 350);
+  }, 3800);
 }
 
 function ago(ts, lang) {
@@ -67,6 +72,8 @@ function ago(ts, lang) {
 
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const PKG_RE = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
 
 // ---------- svg icons ----------
 
@@ -142,7 +149,10 @@ function render() {
   renderSubs();
   renderNotifs();
   renderStatus();
+  initMotion();
 }
+
+// ---------- tag input form ----------
 
 function renderForm() {
   const T = t();
@@ -167,42 +177,58 @@ function renderForm() {
           <input type="text" id="code" name="code" class="mono-input" placeholder="${T.codePlaceholder}" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
           <button class="btn primary" type="submit" id="verifyBtn">${state.busy ? T.verifying : T.verify}</button>
         </div>
-        <p class="hint">${T.codeSentTo.replace('{email}', esc(state.codeSentTo))} · <button type="button" class="unwatch" id="resendBtn" style="display:inline">${T.resend}</button></p>
+        <p class="hint">${T.codeSentTo.replace('{email}', esc(state.codeSentTo))} · <button type="button" class="unwatch inline" id="resendBtn">${T.resend}</button></p>
       </div>`;
   } else {
+    const n = state.tags.length;
+    const btnLabel = n === 0 ? T.watchBtn : (n === 1 ? T.addPackage : T.addPackagePlural).replace('{n}', n);
     inner += `
       <div class="field">
-        <label for="pkg">${T.step3Label} <span class="pill positive" style="margin-left:6px">✓ ${T.verifiedBadge} · ${esc(state.email)}</span></label><!-- taste-skill-ignore: checkmark is a status glyph, not emoji UI -->
-        <div class="row">
-          <input type="text" id="pkg" name="package" class="mono-input" style="letter-spacing:0" placeholder="${T.pkgPlaceholder}" spellcheck="false" autocomplete="off" />
-          <button class="btn primary" type="submit" id="addBtn">${state.busy ? T.adding : T.addPackage}</button>
+        <label for="pkgInput">${T.step3Label} <span class="pill positive" style="margin-left:6px">✓ ${T.verifiedBadge} · ${esc(state.email)}</span></label><!-- taste-skill-ignore: status glyph -->
+        <div class="tagbox" id="tagbox">
+          ${state.tags.map((tag, i) => `
+            <span class="tag mono" data-tag="${esc(tag)}">${esc(tag)}
+              <button type="button" class="tag-x" data-tag-x="${i}" aria-label="remove ${esc(tag)}">×</button>
+            </span>`).join('')}
+          <input type="text" id="pkgInput" placeholder="${state.tags.length ? '' : T.pkgPlaceholder}" autocomplete="off" spellcheck="false" />
         </div>
-        <div id="pkgPreview"></div>
+        <p class="hint">${T.pkgHint}</p>
+        <div class="search-pop" id="searchPop" hidden></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary" type="submit" id="addBtn" ${n === 0 ? 'disabled' : ''}>${state.busy ? T.adding : btnLabel}</button>
+        </div>
       </div>`;
   }
   form.innerHTML = inner;
 }
 
-function renderPkgPreview() {
-  const box = $app.querySelector('#pkgPreview');
-  if (!box) return;
-  const T = t();
-  const p = state.pkgPreview;
-  if (!p) {
-    box.innerHTML = '';
+function renderSearchPop() {
+  const pop = $app.querySelector('#searchPop');
+  if (!pop) return;
+  if (!state.searchOpen || state.searchResults.length === 0) {
+    pop.hidden = true;
     return;
   }
-  if (p.error) {
-    box.innerHTML = `<div class="preview error">${p.error === 'notfound' ? T.pkgNotFound : T.errInvalidPkg}</div>`;
-    return;
-  }
-  const when = p.publishedAt ? ago(Date.parse(p.publishedAt), state.lang) : '';
-  box.innerHTML = `
-    <div class="preview">
-      <span class="name mono">${esc(p.name)}</span>
-      <span class="ver mono"> ${T.latestVersion.replace('{version}', esc(p.version || '?'))}</span>
-      ${when ? `<span class="when"> · ${T.publishedAgo.replace('{ago}', when)}</span>` : ''}
-    </div>`;
+  pop.hidden = false;
+  pop.innerHTML = state.searchResults
+    .map(
+      (r) => `
+      <button type="button" class="search-item" data-pick="${esc(r.name)}">
+        <span class="mono si-name">${esc(r.name)}</span>
+        <span class="si-ver mono">v${esc(r.version)}</span>
+        <span class="si-desc">${esc(r.description.slice(0, 64))}${r.description.length > 64 ? '…' : ''}</span>
+      </button>`
+    )
+    .join('');
+}
+
+function addTag(raw) {
+  const name = raw.trim();
+  if (!name || !PKG_RE.test(name)) return false;
+  if (state.tags.includes(name)) return 'dup';
+  if (state.tags.length >= 20) return false;
+  state.tags.push(name);
+  return true;
 }
 
 function renderTicker() {
@@ -245,7 +271,7 @@ function renderSubs() {
           <div class="meta">${T.watchedSince.replace('{ago}', (s.created_at || '').slice(0, 10))}</div>
         </div>
         <div class="spacer"></div>
-        <span class="version mono" title="${T.latestVersion.replace('{version}', esc(s.version || ''))}">v${esc(s.version || '—')}</span>
+        <span class="version mono" title="latest ${esc(s.version || '')}">v${esc(s.version || '—')}</span>
         <button class="unwatch" data-unwatch="${esc(s.package)}">${T.unwatch}</button>
       </div>`
     )
@@ -318,7 +344,6 @@ async function refreshAccount() {
   } catch { /* offline */ }
 }
 
-// bootstrap: if saved email is verified, jump straight to package step
 async function bootstrap() {
   render();
   if (state.email) {
@@ -339,32 +364,134 @@ async function bootstrap() {
   setInterval(refreshAccount, 30_000);
 }
 
-// ---------- events ----------
+// ---------- motion (design-to-motion, website context) ----------
 
-let previewTimer = null;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-$app.addEventListener('input', (e) => {
-  if (e.target.id !== 'pkg') return;
-  clearTimeout(previewTimer);
-  const name = e.target.value.trim();
-  if (!name) {
-    state.pkgPreview = null;
-    renderPkgPreview();
+function initMotion() {
+  if (reducedMotion.matches) {
+    $app.querySelectorAll('[data-m]').forEach((el) => el.classList.add('arrived'));
     return;
   }
-  previewTimer = setTimeout(async () => {
-    try {
-      const d = await api.get(`/api/packages/${encodeURIComponent(name).replace('%40', '@')}`);
-      state.pkgPreview = d;
-    } catch (err) {
-      state.pkgPreview = { name, error: err.status === 404 ? 'notfound' : 'invalid' };
+  // stagger the shells in reading order
+  const order = ['.hero', '.firehose', '#subscribeForm', '#subscribeForm + .card', '.cols > div:nth-child(2) .card', '.status-strip', 'footer .inner'];
+  order.forEach((sel, i) => {
+    const el = $app.querySelector(sel);
+    if (!el) return;
+    el.setAttribute('data-m', 'card');
+    el.style.setProperty('--d', `${(i * 0.09).toFixed(2)}s`);
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => $app.classList.add('arrived')));
+
+  // ticker chips pop in, staggered
+  $app.querySelectorAll('.ticker .chip').forEach((chip, i) => {
+    chip.style.setProperty('--d', `${Math.min(i * 0.05, 0.8).toFixed(2)}s`);
+  });
+
+  // sheen sweep across the firehose card
+  const fire = $app.querySelector('.firehose');
+  if (fire && !fire.querySelector('.sheen')) {
+    const s = document.createElement('span');
+    s.className = 'sheen';
+    fire.appendChild(s);
+  }
+}
+
+// animate rows that appear after a re-render (subscriptions, notifications, form steps)
+function animateRows(containerSel) {
+  if (reducedMotion.matches) return;
+  const box = $app.querySelector(containerSel);
+  if (!box) return;
+  box.querySelectorAll('.sub-item, .notif, .empty, .field').forEach((row, i) => {
+    row.setAttribute('data-m', 'up');
+    row.style.setProperty('--d', `${Math.min(i * 0.06, 0.5).toFixed(2)}s`);
+    requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add('arrived')));
+  });
+}
+
+// ---------- events ----------
+
+let searchTimer = null;
+
+$app.addEventListener('input', (e) => {
+  // npm search suggestions while typing in the tag input
+  if (e.target.id === 'pkgInput') {
+    clearTimeout(searchTimer);
+    const q = e.target.value.trim();
+    if (q.length < 2) {
+      state.searchOpen = false;
+      renderSearchPop();
+      return;
     }
-    renderPkgPreview();
-  }, 550);
+    searchTimer = setTimeout(async () => {
+      // the tag may have been added while the request was in flight
+      const input = $app.querySelector('#pkgInput');
+      if (!input || !input.value.trim()) {
+        state.searchOpen = false;
+        renderSearchPop();
+        return;
+      }
+      try {
+        const d = await api.get(`/api/search?q=${encodeURIComponent(q)}`);
+        state.searchResults = (d.results || []).filter((r) => !state.tags.includes(r.name));
+        state.searchOpen = state.searchResults.length > 0;
+        renderSearchPop();
+      } catch { /* offline */ }
+    }, 220);
+  }
+});
+
+$app.addEventListener('keydown', (e) => {
+  if (e.target.id !== 'pkgInput') return;
+
+  if (e.key === 'Enter' || e.key === ' ' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value;
+    if (!val.trim()) return;
+    addTag(val);
+    e.target.value = '';
+    state.searchOpen = false;
+    renderForm();
+    $app.querySelector('#pkgInput')?.focus();
+    return;
+  }
+  if (e.key === 'Backspace' && !e.target.value) {
+    state.tags.pop();
+    renderForm();
+    $app.querySelector('#pkgInput')?.focus();
+  }
+  if (e.key === 'Escape') {
+    state.searchOpen = false;
+    renderSearchPop();
+  }
 });
 
 $app.addEventListener('click', async (e) => {
   const T = t();
+  // pick a search suggestion
+  const pick = e.target.closest('[data-pick]');
+  if (pick) {
+    addTag(pick.dataset.pick);
+    state.searchOpen = false;
+    renderForm();
+    $app.querySelector('#pkgInput')?.focus();
+    return;
+  }
+  // close the search popover on outside click
+  if (!e.target.closest('#tagbox') && !e.target.closest('#searchPop')) {
+    if (state.searchOpen) {
+      state.searchOpen = false;
+      renderSearchPop();
+    }
+  }
+  // remove a tag
+  const tagX = e.target.closest('[data-tag-x]');
+  if (tagX) {
+    state.tags.splice(Number(tagX.dataset.tagX), 1);
+    renderForm();
+    $app.querySelector('#pkgInput')?.focus();
+    return;
+  }
   // theme toggle
   if (e.target.closest('#themeBtn')) {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
@@ -413,7 +540,7 @@ $app.addEventListener('submit', async (e) => {
   const form = e.target;
 
   // step 1: request code
-  if (form.querySelector('#sendBtn') && e.submitter?.id !== 'resendBtn') {
+  if (form.querySelector('#sendBtn')) {
     const email = form.querySelector('#email')?.value.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       toast(T.errInvalidEmail, true);
@@ -428,6 +555,7 @@ $app.addEventListener('submit', async (e) => {
       state.step = 'code';
       state.busy = false;
       renderForm();
+      animateRows('#subscribeForm');
       form.querySelector('#code')?.focus();
     } catch {
       state.busy = false;
@@ -464,27 +592,27 @@ $app.addEventListener('submit', async (e) => {
     return;
   }
 
-  // step 3: subscribe
+  // step 3: batch subscribe with server-side dedup
   if (form.querySelector('#addBtn')) {
-    const pkg = form.querySelector('#pkg')?.value.trim();
-    if (!pkg) return;
+    if (state.tags.length === 0) return;
     state.busy = true;
     renderForm();
     try {
-      await api.post('/api/subscribe', { email: state.email, package: pkg });
+      const d = await api.post('/api/subscribe', { email: state.email, packages: state.tags });
       state.busy = false;
-      state.pkgPreview = null;
+      state.tags = [];
       renderForm();
       await refreshAccount();
       refreshStatus();
       refreshFirehose();
+      if (d.duplicatesSkipped > 0) toast(T.dupesSkipped.replace('{n}', d.duplicatesSkipped));
     } catch (err) {
       state.busy = false;
       renderForm();
       const reason = err.body?.error;
       toast(
-        reason === 'package not found' ? T.errPkgNotFound
-        : reason === 'invalid package name' ? T.errInvalidPkg
+        reason === 'package not found' ? `${T.errPkgNotFound}: ${err.body?.package || ''}`
+        : reason === 'invalid package name' ? `${T.errInvalidPkg}: ${err.body?.package || ''}`
         : reason === 'email not verified' ? T.errUnverified
         : T.errNetwork,
         true

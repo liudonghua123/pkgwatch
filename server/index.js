@@ -119,24 +119,40 @@ api.get('/emails', (_req, res) => {
   res.json({ emails: store.verifiedEmailsList() });
 });
 
-// subscribe (requires verified email)
-api.post('/subscribe', (req, res) => {
+// subscribe one or many packages (requires verified email).
+// duplicate (email, package) pairs are deduplicated server-side.
+api.post('/subscribe', async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
-  const pkg = String(req.body?.package || '').trim();
+  const raw = req.body?.package ?? req.body?.packages;
+  const list = Array.isArray(raw)
+    ? raw.map((p) => String(p || '').trim()).filter(Boolean)
+    : [String(raw || '').trim()];
+  const packages = [...new Set(list)].slice(0, 20); // dedupe, cap batch size
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'invalid email' });
-  if (!PKG_RE.test(pkg)) return res.status(400).json({ error: 'invalid package name' });
+  if (packages.length === 0) return res.status(400).json({ error: 'invalid package name' });
+  for (const pkg of packages) {
+    if (!PKG_RE.test(pkg)) return res.status(400).json({ error: 'invalid package name', package: pkg });
+  }
   if (!store.isVerifiedEmail(email)) {
     return res.status(403).json({ error: 'email not verified', reason: 'unverified' });
   }
-  lookupPkg(pkg)
-    .catch(() => null)
-    .then((info) => {
-      if (!info) return res.status(404).json({ error: 'package not found' });
+  try {
+    const added = [];
+    const existing = [];
+    for (const pkg of packages) {
+      const info = await lookupPkg(pkg).catch(() => null);
+      if (!info) {
+        return res.status(404).json({ error: 'package not found', package: pkg });
+      }
+      const before = store.subscriptionsByEmail(email).some((s) => s.package === pkg);
       store.addSubscription(email, pkg);
       store.updateVersion(pkg, info.version);
-      res.json({ ok: true, subscription: { package: pkg, version: info.version } });
-    })
-    .catch(() => res.status(500).json({ error: 'lookup failed' }));
+      (before ? existing : added).push({ package: pkg, version: info.version });
+    }
+    res.json({ ok: true, added, existing, duplicatesSkipped: existing.length });
+  } catch {
+    res.status(500).json({ error: 'lookup failed' });
+  }
 });
 
 // unsubscribe
@@ -166,6 +182,27 @@ api.get('/status', (_req, res) => {
     mailMode: mail.isConsoleMode ? 'console' : 'smtp',
     watched: store.watchedPackages(),
   });
+});
+
+// npm search suggestions for the tag input
+api.get('/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ results: [] });
+  try {
+    const r = await fetch(
+      `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(q)}&size=6`
+    );
+    const data = await r.json();
+    res.json({
+      results: (data.objects || []).map((o) => ({
+        name: o.package.name,
+        description: o.package.description || '',
+        version: o.package.version,
+      })),
+    });
+  } catch {
+    res.json({ results: [] });
+  }
 });
 
 // recent publishes straight from the npm firehose (the live ticker)
