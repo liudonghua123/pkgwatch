@@ -222,7 +222,7 @@ api.get('/subscriptions/:email', (req, res) => {
 api.get('/status', (_req, res) => {
   res.json({
     watcher: poller.stats(),
-    mailMode: mail.isConsoleMode ? 'console' : 'smtp',
+    mailMode: mail.mode,
     watched: store.watchedPackages(),
   });
 });
